@@ -7,24 +7,18 @@ import re
 
 import pandas as pd
 
-from analysis import singleN, multiN
+from analysis import single2,multi2
 from util import bashAnalysis
 
 
 class ChatDevAnalysis:
-    # Prd  一行
-    # arch 一行
-    # | ** assistant_role_name ** | Chief Product Officer |
-    # | ** user_role_name ** | Chief Executive Officer |
-    # code  2
-    # review  3
+
     def _load_log(self, log_path) -> any:
         try:
             with open(log_path, 'r', encoding='utf-8') as f:
                 log_content = f.read()
                 return log_content
         except FileNotFoundError:
-            print(f"错误: 文件未找到 at path: {log_path}")
             return []
 
     def _extract_content_by_role(self, log_path: str, roles: Tuple[str, str]) -> List[str]:
@@ -35,7 +29,6 @@ class ChatDevAnalysis:
         extracted_contents = []
         timestamp_pattern = re.compile(r'^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} INFO\]')
 
-        # 构建用于匹配角色块的字符串
         assistant_role_marker = f'| **assistant_role_name** | {assistant_role} |'
         user_role_marker = f'| **user_role_name** | {user_role} |'
         capture_start_marker = f'INFO] {assistant_role}:'
@@ -55,18 +48,15 @@ class ChatDevAnalysis:
 
                 if is_capturing:
                     if timestamp_pattern.match(line):
-                        break  # 遇到下一个时间戳，停止捕获
+                        break
                     captured_lines.append(line)
 
             if captured_lines:
                 content = '\n'.join(captured_lines).strip()
-                # 移除开头的 "[ChatDev]" 等提示信息
                 prompt_end_marker = ']'
                 prompt_end_index = content.find(prompt_end_marker)
-
                 actual_content = content[prompt_end_index + 1:].strip() if prompt_end_index != -1 else content
-
-                if actual_content:  # 确保不添加空字符串
+                if actual_content:
                     extracted_contents.append(actual_content)
 
         return extracted_contents
@@ -115,7 +105,6 @@ class ChatDevAnalysis:
         return self._extract_content_by_role(log_path, roles)
 
     def get_review(self, log_path) -> List[str]:
-        """从日志中提取'Code Reviewer'的评审意见。"""
         roles = ("Code Reviewer", "Programmer")
         return self._extract_content_by_role(log_path, roles)
 
@@ -126,19 +115,11 @@ class ChatDevAnalysis:
             target_role_name = "Code Reviewer"
         elif content_type == "code":
             target_role_name = "Programmer"
-        else:
-            raise ValueError(f"不支持的内容类型: '{content_type}'.")
 
         return self._extract_content_by_role_in_phase(log_path,roles, target_role_name)
 
     def analyze_single(self, log_path) -> dict:
-        '''
-        :param log_path:
-        code_init 1
-        review 3
-        :return:
-        '''
-        print(f"======== 开始分析日志文件: {log_path} ========")
+
 
         code_list = self.get_init_code(log_path)
         test_list = self.get_review(log_path)
@@ -148,22 +129,19 @@ class ChatDevAnalysis:
         code_score_keys = ["Integrity", "Correctness", "Readability", "Efficiency"]
         total_code_scores = {key: 0 for key in code_score_keys}
         if code_list:
-            print(f"\n--- 正在分析 {len(code_list)} 个代码版本 ---")
             for i, code_doc in enumerate(code_list):
                 print(f"  Code #{i + 1}...")
-                code_score_dict = singleN.analysis_code(code_doc)
+                code_score_dict = single2.analysis_code(code_doc)
                 # print(code_score_dict)
                 for key_capitalized in code_score_keys:
                     dict_key_lowercase = key_capitalized.lower()
                     total_code_scores[key_capitalized] += code_score_dict.get(dict_key_lowercase, 0)
 
-            print("  计算Code平均分...")
             for key in code_score_keys:
                 avg_score = total_code_scores[key] / len(code_list)
                 print(avg_score)
                 final_scores[f'avg_code_{key.lower()}_score'] = avg_score
         else:
-            print("警告: 未找到任何代码进行分析，代码分数将设为 -999。")
             for key in code_score_keys:
                 final_scores[f'avg_code_{key.lower()}_score'] = -999
 
@@ -172,38 +150,26 @@ class ChatDevAnalysis:
         total_test_scores = {key: 0 for key in test_score_keys}
 
         if test_list:
-            print(f"\n--- 正在分析 {len(test_list)} 个测试版本 ---")
             for i, test_doc in enumerate(test_list):
-                print(f"  评估Test版本 #{i + 1}...")
-                test_score_dict = singleN.analysis_test(test_doc)
+                test_score_dict = single2.analysis_test(test_doc)
                 # print(test_score_dict)
                 for key_capitalized in test_score_keys:
                     dict_key_lowercase = key_capitalized.lower()
                     total_test_scores[key_capitalized] += test_score_dict.get(dict_key_lowercase, 0)
 
-            print("  计算Test平均分...")
             for key in test_score_keys:
                 avg_score = total_test_scores[key] / len(test_list)
                 print(avg_score)
                 final_scores[f'avg_test_{key.lower()}_score'] = avg_score
         else:
-            print("警告: 未找到任何测试用例进行分析，测试分数将设为 -999。")
             for key in test_score_keys:
                 final_scores[f'avg_test_{key.lower()}_score'] = -999
 
         return final_scores
 
     def analyze_multi(self, log_path) -> dict:
-        '''
-        :param log_path:
-        code2Test
-        Test2code
-        :return:
-        '''
-
         final_scores = {}
 
-        print(f"======== 开始分析日志文件: {log_path} ========")
         # code2Test
         roles = ("Code Reviewer", "Programmer")
         code_list = self.get_content(log_path, roles, "code")
@@ -223,24 +189,17 @@ class ChatDevAnalysis:
 
         num_code_test_pairs = min(len(code_list), len(test_list))
         if num_code_test_pairs > 0:
-            print(f"\n--- 正在分析 {num_code_test_pairs} 个 Code-Test 对 ---")
 
             for i, (code_doc, test_doc) in enumerate(zip(code_list, test_list)):
-                print(f"  评估 Code-Test 对 #{i + 1}...")
-                score_dict = multiN.analysis_code_test(code_doc, test_doc)
-                # print(f"    ↳  分数: {score_dict}")
+                score_dict = multi2.analysis_code_test(code_doc, test_doc)
                 for key in code_test_keys:
                     dict_key = key.lower().replace(" ", "_")  # <--- 修正这一行
-
                     total_code_test_scores[key] += score_dict.get(dict_key, 0)
 
-            print("  计算 Code-Test 平均分...")
             for key in code_test_keys:
                 avg_score = total_code_test_scores[key] / num_code_test_pairs
                 final_key = final_key_map[key]  # 从映射中获取最终键名
                 final_scores[final_key] = avg_score
-        else:
-            print("警告: 未找到足够的 Code-Test 对进行分析，所有相关分数将为 -999。")
 
         # Test2Code
         roles2 = ("Programmer", "Code Reviewer")
@@ -257,48 +216,31 @@ class ChatDevAnalysis:
         if len(test_list2) > 0 and len(code_list2) >= len(test_list2):
             num_test_code_pairs = len(test_list2)-1
 
-        # 如果有至少一对可以分析
         if num_test_code_pairs > 0:
-            print(f"\n--- 正在分析 {num_test_code_pairs} 个 Test-Code ---")
 
-            # 遍历 test_list
             for i in range(num_test_code_pairs):
-                # 获取当前的 test_doc
                 test_doc = test_list2[i]
-                # 获取下一个位置的 code_doc (索引是 i + 1)
                 code_doc = code_list2[i + 1]
-
-                print(f"  评估 Test-Code 对...")
-
-                score_dict = multiN.analysis_test_code(test_doc, code_doc)
+                score_dict = multi2.analysis_test_code(test_doc, code_doc)
                 for key in test_code_keys:
                     total_test_code_scores[key] += score_dict.get(key.lower(), 0)
 
-            # 计算平均分并更新 final_scores
-            print("  计算 Test-Code 平均分...")
             for key in test_code_keys:
                 avg_score = total_test_code_scores[key] / num_test_code_pairs
                 final_scores[f'avg_test_code_{key.lower()}_score'] = avg_score
 
-        else:
-            print("警告: 未找到足够的 Code 或 Test 来进行错位配对分析，所有相关分数将为 -999。")
 
         return final_scores
 
     def bash_single(self,dir_path):
-        print("========== [ChatDev] 开始批量执行 Single Analysis ==========")
         df = bashAnalysis.process_and_report_generic(dir_path, self.analyze_single)
         pd.set_option('display.max_columns', None)
-        # 设置一个较宽的显示宽度，以在一行内容纳所有列
         pd.set_option('display.width', 1000)
         return df
 
     def bash_multi(self,dir_path):
-        print("========== [ChatDev] 开始批量执行 Multiple Analysis ==========")
         df = bashAnalysis.process_and_report_generic(dir_path, self.analyze_multi)
-
         pd.set_option('display.max_columns', None)
-        # 设置一个较宽的显示宽度，以在一行内容纳所有列
         pd.set_option('display.width', 1000)
 
         return df
@@ -318,10 +260,7 @@ class ChatDevPerformance:
             with open(log_path, 'r', encoding='utf-8') as f:
                 content = f.read()
         except FileNotFoundError:
-            print(f"错误: 找不到文件 '{log_path}'。请确保文件路径正确。")
             return None
-
-            # --- 提取所有时间戳并找到全局最后一个 ---
         all_timestamps_in_log = []
         info_timestamps_str = re.findall(r'\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) INFO\]', content)
         all_timestamps_in_log.extend([datetime.strptime(ts, '%Y-%d-%m %H:%M:%S') for ts in info_timestamps_str])
@@ -331,12 +270,10 @@ class ChatDevPerformance:
             all_timestamps_in_log.append(datetime.strptime(end_timestamp_match.group(1), '%Y%m%d%H%M%S'))
 
         if not all_timestamps_in_log:
-            print("日志中未找到任何有效的时间戳。")
             return None
 
         last_log_timestamp = max(all_timestamps_in_log)
 
-        # --- 提取每个 [chatting] 块 ---
         block_info_pattern = re.compile(
             r'\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) INFO\] System: \*\*\[chatting\]\*\*',
             re.DOTALL
@@ -344,10 +281,8 @@ class ChatDevPerformance:
         chatting_starts = list(block_info_pattern.finditer(content))
 
         if not chatting_starts:
-            print("日志中未找到有效的聊天块。")
             return None
 
-        # --- 计算成本并存储数据 ---
         performance_data = defaultdict(lambda: {"time_costs": [], "token_costs": []})
 
         for i, start_match in enumerate(chatting_starts):
@@ -381,7 +316,6 @@ class ChatDevPerformance:
         print(f"{'Agent Name':<30} | {'Total Time (sec)':>12} | {'Total Tokens':>12}")
         print("-" * 60)
 
-        # 按Agent名字母顺序排序输出，保持结果一致性
         sorted_agents = sorted(performance_data.keys())
 
         for agent in sorted_agents:
@@ -389,9 +323,7 @@ class ChatDevPerformance:
             if not data['time_costs']:
                 continue
 
-            # **应用特殊规则：Chief Product Officer 只取第一个值**
             if agent == "Chief Product Officer":
-                # 直接返回列表中的第一个 time 和 token
                 total_time = data['time_costs'][0]
                 total_tokens = data['token_costs'][0]
             else:
@@ -404,53 +336,39 @@ class ChatDevPerformance:
         print("-" * 60)
 
     def run_bash(self, dir_path):
-        """
-        批量处理性能日志并生成报告。
-        此版本适配每个 instruction 只有一个 log.txt 的新目录结构。
-        """
-        print(f"开始批量处理和分析目录: '{dir_path}'\n")
         root_path = Path(dir_path)
         if not root_path.is_dir():
             print(f"错误: 目录 '{dir_path}' 不存在。")
             return
 
-        # 1. 查找所有 'instructionX' 文件夹并进行数字排序
         try:
             instruction_paths = [p for p in root_path.iterdir() if p.is_dir() and p.name.startswith('instruction')]
             sorted_instructions = sorted(instruction_paths, key=lambda p: int(p.name.replace('instruction', '')))
         except (ValueError, FileNotFoundError):
-            print(f"错误: 在 '{dir_path}' 中未找到 'instructionX' 格式的文件夹或其名称无法解析为数字。")
             return
 
         final_reports = {}
 
-        # 2. 遍历每个 instruction 文件夹
         for instruction_path in sorted_instructions:
             instruction_name = instruction_path.name
 
-            # 直接定位 log.txt 文件
             log_path = instruction_path / 'log.txt'
 
             if not log_path.is_file():
-                print(f"  [警告] 在 {instruction_name} 中未找到 log.txt，跳过。")
                 continue
 
-            # 调用 performance 函数获取单次运行的数据
             single_run_data = self.performance(str(log_path))
             if not single_run_data:
-                print(f"  [信息] {instruction_name} 的 performance() 未返回有效数据。")
                 continue
 
-            # 3. 处理单次运行的数据（不再需要聚合和平均）
             report_data = {}
             for agent, costs in single_run_data.items():
-                if not costs.get('time_costs'):  # 使用 .get() 避免 KeyError
+                if not costs.get('time_costs'):
                     continue
 
                 time_cost = 0
                 token_cost = 0
 
-                # 对不同 Agent 的成本计算逻辑保持不变
                 if agent == "Chief Product Officer":
                     time_cost = costs['time_costs'][0] if costs['time_costs'] else 0
                     token_cost = costs['token_costs'][0] if costs['token_costs'] else 0
@@ -465,19 +383,14 @@ class ChatDevPerformance:
 
             final_reports[instruction_name] = report_data
 
-        # 4. 生成并打印最终报告
         for instruction in sorted(final_reports.keys(), key=lambda x: int(x.replace('instruction', ''))):
             report_data = final_reports[instruction]
 
             print("=" * 70)
-            # 标题从 "Averages for" 改为 "Report for"
             print(f"--- Performance Report for: {instruction} ---")
             print("-" * 70)
-            # 列名从 "Avg Time" 改为 "Time Cost" 和 "Total Tokens"
             print(f"{'Agent Name':<30} | {'Time Cost (sec)':>15} | {'Total Tokens':>15}")
             print("-" * 70)
-
-            # 按 Agent 名字母顺序排序
             for agent in sorted(report_data.keys()):
                 cost_data = report_data[agent]
                 print(f"{agent:<30} | {cost_data['time_cost']:>15.2f} | {cost_data['token_cost']:>15.0f}")
