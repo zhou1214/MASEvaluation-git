@@ -1,7 +1,7 @@
 import os
 from util import llm
 from analysis import evaluator
-from Prompt2 import code2test,test2code
+from Prompt import code2test,test2code
 
 NUM_RUNS = 1
 
